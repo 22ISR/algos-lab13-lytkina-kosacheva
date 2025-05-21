@@ -206,3 +206,277 @@ def download_and_display_image(url, label):
     # Запуск загрузки в отдельном потоке
     threading.Thread(target=download).start()
 ```
+import tkinter as tk
+from tkinter import ttk
+import requests
+from PIL import Image, ImageTk
+from io import BytesIO
+import threading
+from datetime import datetime
+
+class SpotifyApp:
+    def __init__(self, root):
+        self.root = root
+        self.root.title("Spotify Картотека")
+        self.root.geometry("1000x600")
+        
+        # Данные
+        self.data = []
+        self.filtered_data = []
+        self.current_sort = "date_added"
+        self.sort_reverse = False
+        
+        # Создание интерфейса
+        self.create_widgets()
+        
+        # Загрузка данных
+        self.load_data()
+    
+    def create_widgets(self):
+        # Панель поиска
+        search_frame = ttk.Frame(self.root, padding="10")
+        search_frame.pack(fill=tk.X)
+        
+        ttk.Label(search_frame, text="Поиск:").pack(side=tk.LEFT)
+        
+        self.search_var = tk.StringVar()
+        self.search_entry = ttk.Entry(search_frame, textvariable=self.search_var, width=40)
+        self.search_entry.pack(side=tk.LEFT, padx=5)
+        self.search_entry.bind("<KeyRelease>", self.apply_filters)
+        
+        # Кнопки сортировки
+        sort_frame = ttk.Frame(self.root, padding="10")
+        sort_frame.pack(fill=tk.X)
+        
+        ttk.Label(sort_frame, text="Сортировка:").pack(side=tk.LEFT)
+        
+        self.sort_buttons = {
+            "date_added": ttk.Button(sort_frame, text="По дате добавления", 
+                                   command=lambda: self.sort_data("date_added")),
+            "duration": ttk.Button(sort_frame, text="По длительности", 
+                                 command=lambda: self.sort_data("duration")),
+            "popularity": ttk.Button(sort_frame, text="По популярности", 
+                                   command=lambda: self.sort_data("popularity"))
+        }
+        
+        for btn in self.sort_buttons.values():
+            btn.pack(side=tk.LEFT, padx=5)
+        
+        # Таблица с данными
+        self.tree_frame = ttk.Frame(self.root)
+        self.tree_frame.pack(fill=tk.BOTH, expand=True, padx=10, pady=(0, 10))
+        
+        columns = ("track", "artist", "album", "duration", "popularity", "date_added")
+        self.tree = ttk.Treeview(self.tree_frame, columns=columns, show="headings", selectmode="browse")
+        
+        # Настройка колонок
+        self.tree.heading("track", text="Трек", command=lambda: self.sort_treeview("track"))
+        self.tree.heading("artist", text="Исполнитель", command=lambda: self.sort_treeview("artist"))
+        self.tree.heading("album", text="Альбом", command=lambda: self.sort_treeview("album"))
+        self.tree.heading("duration", text="Длительность", command=lambda: self.sort_treeview("duration"))
+        self.tree.heading("popularity", text="Популярность", command=lambda: self.sort_treeview("popularity"))
+        self.tree.heading("date_added", text="Дата добавления", command=lambda: self.sort_treeview("date_added"))
+        
+        self.tree.column("track", width=200)
+        self.tree.column("artist", width=150)
+        self.tree.column("album", width=200)
+        self.tree.column("duration", width=80, anchor="center")
+        self.tree.column("popularity", width=80, anchor="center")
+        self.tree.column("date_added", width=120, anchor="center")
+        
+        # Полоса прокрутки
+        scrollbar = ttk.Scrollbar(self.tree_frame, orient="vertical", command=self.tree.yview)
+        self.tree.configure(yscrollcommand=scrollbar.set)
+        scrollbar.pack(side="right", fill="y")
+        self.tree.pack(side="left", fill="both", expand=True)
+        
+        # Детальная информация
+        self.detail_frame = ttk.Frame(self.root, padding="10")
+        self.detail_frame.pack(fill=tk.X)
+        
+        self.album_art = ttk.Label(self.detail_frame)
+        self.album_art.pack(side="left", padx=10)
+        
+        self.detail_text = tk.Text(self.detail_frame, height=5, width=60, state="disabled")
+        self.detail_text.pack(side="left", fill=tk.BOTH, expand=True)
+        
+        # Привязка события выбора
+        self.tree.bind("<<TreeviewSelect>>", self.on_item_select)
+    
+    def load_data(self):
+        try:
+            # Загрузка данных с сервера
+            response = requests.get("http://omsktec-playgrounds.ru/algos/1ab13")
+            if response.status_code == 200:
+                self.data = response.json()
+                self.filtered_data = self.data.copy()
+                self.sort_data("date_added")
+            else:
+                # Попробуем альтернативный URL
+                response = requests.get("http://147.45.158.220/algos/Lab13")
+                if response.status_code == 200:
+                    self.data = response.json()
+                    self.filtered_data = self.data.copy()
+                    self.sort_data("date_added")
+                else:
+                    raise Exception("Не удалось загрузить данные")
+        except Exception as e:
+            print(f"Ошибка загрузки данных: {e}")
+            # Создаем тестовые данные для демонстрации
+            self.data = [
+                {
+                    "track": "Test Track",
+                    "artist": "Test Artist",
+                    "album": "Test Album",
+                    "duration": "3:45",
+                    "popularity": 50,
+                    "date_added": "2023-01-01",
+                    "album_art": "https://via.placeholder.com/150"
+                }
+            ]
+            self.filtered_data = self.data.copy()
+            self.sort_data("date_added")
+    
+    def apply_filters(self, event=None):
+        search_term = self.search_var.get().lower()
+        
+        if not search_term:
+            self.filtered_data = self.data.copy()
+        else:
+            self.filtered_data = [
+                item for item in self.data
+                if (search_term in item["track"].lower() or 
+                    search_term in item["artist"].lower() or 
+                    search_term in item["album"].lower())
+            ]
+        
+        self.sort_data(self.current_sort)
+    
+    def sort_data(self, sort_key):
+        self.current_sort = sort_key
+        
+        # Сбросим выделение всех кнопок сортировки
+        for btn in self.sort_buttons.values():
+            btn.state(["!pressed"])
+        
+        # Подсветим активную кнопку сортировки
+        if sort_key == "date_added":
+            self.sort_buttons["date_added"].state(["pressed"])
+        elif sort_key == "duration":
+            self.sort_buttons["duration"].state(["pressed"])
+        elif sort_key == "popularity":
+            self.sort_buttons["popularity"].state(["pressed"])
+        
+        # Сортировка данных
+        if sort_key == "date_added":
+            self.filtered_data.sort(key=lambda x: datetime.strptime(x[sort_key], "%Y-%m-%d"), reverse=self.sort_reverse)
+        elif sort_key == "duration":
+            self.filtered_data.sort(key=lambda x: self.duration_to_seconds(x[sort_key]), reverse=self.sort_reverse)
+        else:
+            self.filtered_data.sort(key=lambda x: x[sort_key], reverse=self.sort_reverse)
+        
+        self.update_treeview()
+    
+    def sort_treeview(self, column):
+        # Простая сортировка по колонкам таблицы
+        items = [(self.tree.set(item, column), item) for item in self.tree.get_children("")]
+        items.sort(reverse=self.sort_reverse)
+        
+        for index, (val, item) in enumerate(items):
+            self.tree.move(item, "", index)
+        
+        self.sort_reverse = not self.sort_reverse
+    
+    def duration_to_seconds(self, duration_str):
+        try:
+            minutes, seconds = map(int, duration_str.split(":"))
+            return minutes * 60 + seconds
+        except:
+            return 0
+    
+    def update_treeview(self):
+        # Очистка таблицы
+        for item in self.tree.get_children():
+            self.tree.delete(item)
+        
+        # Заполнение таблицы
+        for item in self.filtered_data:
+            self.tree.insert("", "end", values=(
+                item["track"],
+                item["artist"],
+                item["album"],
+                item["duration"],
+                item["popularity"],
+                item["date_added"]
+            ))
+    
+    def on_item_select(self, event):
+        selected_item = self.tree.focus()
+        if not selected_item:
+            return
+        
+        item_data = self.tree.item(selected_item)
+        values = item_data["values"]
+        
+        # Находим полные данные о выбранном треке
+        track_info = next(
+            (item for item in self.filtered_data 
+             if (item["track"] == values[0] and 
+                 item["artist"] == values[1] and 
+                 item["album"] == values[2])),
+            None
+        )
+        
+        if track_info:
+            # Обновляем детальную информацию
+            self.detail_text.config(state="normal")
+            self.detail_text.delete(1.0, tk.END)
+            
+            info_text = (
+                f"Трек: {track_info['track']}\n"
+                f"Исполнитель: {track_info['artist']}\n"
+                f"Альбом: {track_info['album']}\n"
+                f"Длительность: {track_info['duration']}\n"
+                f"Популярность: {track_info['popularity']}\n"
+                f"Дата добавления: {track_info['date_added']}"
+            )
+            
+            self.detail_text.insert(tk.END, info_text)
+            self.detail_text.config(state="disabled")
+            
+            # Загрузка обложки альбома
+            self.load_album_art(track_info.get("album_art", ""))
+    
+    def load_album_art(self, url):
+        if not url:
+            # Очищаем изображение, если URL нет
+            self.album_art.config(image="")
+            self.album_art.image = None
+            return
+        
+        # Загрузка изображения в отдельном потоке
+        threading.Thread(target=self._download_image, args=(url,), daemon=True).start()
+    
+    def _download_image(self, url):
+        try:
+            response = requests.get(url, stream=True)
+            if response.status_code == 200:
+                image_data = response.content
+                image = Image.open(BytesIO(image_data))
+                image = image.resize((150, 150), Image.LANCZOS)
+                photo = ImageTk.PhotoImage(image)
+                
+                # Обновляем UI в главном потоке
+                self.root.after(0, lambda: self._update_image(photo))
+        except Exception as e:
+            print(f"Ошибка загрузки изображения: {e}")
+    
+    def _update_image(self, photo_image):
+        self.album_art.config(image=photo_image)
+        self.album_art.image = photo_image  # Сохраняем ссылку
+
+
+if __name__ == "__main__":
+    root = tk.Tk()
+    app = SpotifyApp(root)
+    root.mainloop()
